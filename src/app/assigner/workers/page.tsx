@@ -1,0 +1,77 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import Header from '@/components/Header';
+
+interface Worker { id: string; name: string; email?: string | null }
+
+export default function WorkersPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (status === 'loading') return;
+    if (!session) router.push('/auth/signin');
+    if (session && session.user.role === 'WORKER') router.push('/dashboard');
+  }, [session, status, router]);
+
+  useEffect(() => { fetchWorkers(); }, []);
+
+  const fetchWorkers = async () => {
+    setLoading(true);
+    const res = await fetch('/api/users', { cache: 'no-store' });
+    if (res.ok) {
+      const list: Array<{ id: string; name: string; email?: string | null; role: string }> = await res.json();
+      setWorkers(list.filter((u) => u.role === 'WORKER'));
+    }
+    setLoading(false);
+  };
+
+  if (status === 'loading' || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session || session.user.role === 'WORKER') return null;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">Çalışanlar</h1>
+          <p className="text-gray-600 mt-2">Çalışan listesi ve detayları</p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow divide-y">
+          {workers.map((w) => (
+            <div key={w.id} className="p-4 flex items-center justify-between">
+              <div>
+                <div className="font-medium text-gray-900">{w.name}</div>
+                {w.email && <div className="text-sm text-gray-500">{w.email}</div>}
+              </div>
+              <div>
+                <button onClick={() => router.push(`/assigner/workers/${w.id}`)} className="px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Detay</button>
+              </div>
+            </div>
+          ))}
+          {workers.length === 0 && (
+            <div className="p-6 text-center text-gray-500">Çalışan bulunamadı.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
