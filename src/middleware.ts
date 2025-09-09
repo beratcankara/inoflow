@@ -33,5 +33,12 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    // sadece koruman gereken yollar
+    '/dashboard/:path*',
+    '/tasks/:path*',
+    '/admin/:path*',
+    '/assigner/:path*',
+    '/profile/:path*'
+  ],
 };
