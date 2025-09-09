@@ -123,17 +123,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Cache headers for better performance
+    // Kimliği doğrulanmış ve kullanıcıya göre değişen veri: cache KAPALI
     const response = NextResponse.json(tasks);
-    
-    if (isDashboard) {
-      // Dashboard data cache for 5 minutes
-      response.headers.set('Cache-Control', 'public, max-age=300');
-    } else {
-      // Regular tasks cache for 1 minute
-      response.headers.set('Cache-Control', 'public, max-age=60');
-    }
-    
+    response.headers.set('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Vary', 'Cookie');
     return response;
   } catch (error) {
     console.error('Error fetching tasks:', error);
