@@ -150,7 +150,7 @@ export default function KanbanBoard({ tasks, onStatusChange, onTaskClick, onTask
 
 
   return (
-    <div className="relative flex space-x-6 overflow-x-auto pb-4">
+    <div className="relative flex space-x-6 overflow-x-auto pb-6" style={{ minHeight: '560px' }}>
       {(focusStatus ? [focusStatus] : statusOrder).map((status) => {
         const config = statusConfig[status as keyof typeof statusConfig];
         const statusTasks = getTasksByStatus(status);
@@ -183,7 +183,7 @@ export default function KanbanBoard({ tasks, onStatusChange, onTaskClick, onTask
               </div>
             </div>
             
-            <div className="space-y-3 max-h-80 sm:max-h-96 overflow-y-auto pr-2 kanban-scroll">
+            <div className="space-y-3 max-h-[48rem] overflow-y-auto pr-2 kanban-scroll">
               {statusTasks.map((task) => (
                 <div
                   key={task.id}
