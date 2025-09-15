@@ -14,19 +14,19 @@ interface KanbanBoardProps {
 
 const statusConfig = {
   'NOT_STARTED': {
-    title: 'Yapılacaklar',
+    title: 'Açık İşler',
     color: 'bg-gray-100',
     textColor: 'text-gray-700',
     borderColor: 'border-gray-300'
   },
   'NEW_STARTED': {
-    title: 'Yeni Başlananlar',
+    title: 'Geliştirilmeye Hazır',
     color: 'bg-blue-100',
     textColor: 'text-blue-700',
     borderColor: 'border-blue-300'
   },
   'IN_PROGRESS': {
-    title: 'Devam Edenler',
+    title: 'Geliştirme Aşamasında',
     color: 'bg-yellow-100',
     textColor: 'text-yellow-700',
     borderColor: 'border-yellow-300'

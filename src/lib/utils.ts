@@ -57,11 +57,11 @@ export function getStatusColor(status: string): string {
 export function getStatusText(status: string): string {
   switch (status) {
     case 'NOT_STARTED':
-      return 'Yapılacaklar';
+      return 'Açık İşler';
     case 'NEW_STARTED':
-      return 'Yeni Başlananlar';
+      return 'Geliştirilmeye Hazır';
     case 'IN_PROGRESS':
-      return 'Devam Edenler';
+      return 'Geliştirme Aşamasında';
     case 'IN_TESTING':
       return 'Teste Verilenler';
     case 'COMPLETED':

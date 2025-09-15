@@ -38,10 +38,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Admin ve Assigner sistem oluşturabilir
-    if (!(session.user.role === 'ADMIN' || session.user.role === 'ASSIGNER')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    // Admin, Assigner ve Worker sistem oluşturabilir
+    // (Artık Worker'lar da müşteri/sistem ekleyip düzenleyebilir)
 
     const body = await request.json();
     const { data: system, error } = await supabase

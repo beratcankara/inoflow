@@ -43,13 +43,15 @@ export async function GET(request: NextRequest) {
         query = query.eq('assigned_to', session.user.id);
       }
     }
-    // Assigner kullanıcıları kendilerine atanan ve oluşturdukları işleri görür
-    // Ama assignedTo filtresi varsa, o çalışanın işlerini göster (çalışan detay sayfası için)
+    // Assigner kullanıcıları: Dashboard'da TÜM işleri görebilir.
+    // Dashboard dışı sayfalarda (ör. kendi görünümü) varsayılan daraltma korunur.
     else if (session.user.role === 'ASSIGNER') {
-      if (!assignedTo) {
-        query = query.or(`assigned_to.eq.${session.user.id},created_by.eq.${session.user.id}`);
+      if (!isDashboard) {
+        if (!assignedTo) {
+          query = query.or(`assigned_to.eq.${session.user.id},created_by.eq.${session.user.id}`);
+        }
       }
-      // assignedTo filtresi varsa, sadece o çalışanın işlerini göster (çalışan detay sayfası)
+      // isDashboard === true iken herhangi bir ek kısıtlama uygulanmaz (tüm işler)
     }
     // Admin tüm işleri görür (filtreleme yok)
 

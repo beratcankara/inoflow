@@ -86,12 +86,12 @@ export async function PATCH(
     if (updatedTask.created_by !== session.user.id) {
       try {
         const statusTexts = {
-          'NOT_STARTED': 'Yapılacaklar',
-          'NEW_STARTED': 'Yeni Başlananlar',
-          'IN_PROGRESS': 'Devam Edenler',
+          'NOT_STARTED': 'Açık İşler',
+          'NEW_STARTED': 'Geliştirilmeye Hazır',
+          'IN_PROGRESS': 'Geliştirme Aşamasında',
           'IN_TESTING': 'Teste Verilenler',
           'COMPLETED': 'Tamamlananlar'
-        };
+        } as const;
 
         const fromStatusText = fromStatus ? statusTexts[fromStatus as keyof typeof statusTexts] || fromStatus : 'Bilinmeyen';
         const toStatusText = statusTexts[toStatus as keyof typeof statusTexts] || toStatus;

@@ -57,9 +57,9 @@ export default function TaskList({ tasks, onTaskClick, onStatusChange, showActio
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 relative z-50"
             >
               <option value="ALL">Tüm Durumlar</option>
-              <option value="NOT_STARTED">Yapılacaklar</option>
-              <option value="NEW_STARTED">Yeni Başlananlar</option>
-              <option value="IN_PROGRESS">Devam Edenler</option>
+              <option value="NOT_STARTED">Açık İşler</option>
+              <option value="NEW_STARTED">Geliştirilmeye Hazır</option>
+              <option value="IN_PROGRESS">Geliştirme Aşamasında</option>
               <option value="IN_TESTING">Teste Verilenler</option>
               <option value="COMPLETED">Tamamlananlar</option>
             </select>

@@ -40,7 +40,7 @@ export default function Header() {
                 Admin
               </Link>
             )}
-            {(session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN') && (
+            {(session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN' || session?.user?.role === 'WORKER') && (
               <Link href="/assigner/clients" className="text-gray-600 hover:text-blue-600 hover:scale-105 transition-all duration-200 font-medium">
                 Müşteriler
               </Link>

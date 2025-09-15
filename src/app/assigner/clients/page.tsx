@@ -20,7 +20,6 @@ export default function AssignerClientsPage() {
   useEffect(() => {
     if (status === 'loading') return;
     if (!session) router.push('/auth/signin');
-    if (session && session.user.role === 'WORKER') router.push('/dashboard');
   }, [session, status, router]);
 
   useEffect(() => {
@@ -68,7 +67,7 @@ export default function AssignerClientsPage() {
     );
   }
 
-  if (!session || session.user.role === 'WORKER') return null;
+  if (!session) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">

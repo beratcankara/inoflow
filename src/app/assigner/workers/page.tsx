@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 
 interface Worker { id: string; name: string; email?: string | null }
+interface Counts { open: number; ready: number; progress: number }
 
 export default function WorkersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [counts, setCounts] = useState<Record<string, Counts>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,7 +28,24 @@ export default function WorkersPage() {
     const res = await fetch('/api/users', { cache: 'no-store' });
     if (res.ok) {
       const list: Array<{ id: string; name: string; email?: string | null; role: string }> = await res.json();
-      setWorkers(list.filter((u) => u.role === 'WORKER'));
+      const onlyWorkers = list.filter((u) => u.role === 'WORKER');
+      setWorkers(onlyWorkers);
+      // her worker için status sayıları
+      const map: Record<string, Counts> = {};
+      await Promise.all(onlyWorkers.map(async (w) => {
+        const r = await fetch(`/api/tasks?assigned_to=${w.id}&limit=999`, { cache: 'no-store' });
+        if (r.ok) {
+          const arr: Array<{ status: string }> = await r.json();
+          map[w.id] = {
+            open: arr.filter(t => t.status === 'NOT_STARTED').length,
+            ready: arr.filter(t => t.status === 'NEW_STARTED').length,
+            progress: arr.filter(t => t.status === 'IN_PROGRESS').length,
+          };
+        } else {
+          map[w.id] = { open: 0, ready: 0, progress: 0 };
+        }
+      }));
+      setCounts(map);
     }
     setLoading(false);
   };
@@ -60,7 +79,12 @@ export default function WorkersPage() {
                 <div className="font-medium text-gray-900">{w.name}</div>
                 {w.email && <div className="text-sm text-gray-500">{w.email}</div>}
               </div>
-              <div>
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-700">
+                  <span className="mr-3"><span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-1"></span>Açık: {counts[w.id]?.open ?? 0}</span>
+                  <span className="mr-3"><span className="inline-block w-2 h-2 rounded-full bg-blue-400 mr-1"></span>Hazır: {counts[w.id]?.ready ?? 0}</span>
+                  <span><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 mr-1"></span>Geliştirme: {counts[w.id]?.progress ?? 0}</span>
+                </div>
                 <button onClick={() => router.push(`/assigner/workers/${w.id}`)} className="px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Detay</button>
               </div>
             </div>

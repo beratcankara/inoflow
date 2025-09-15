@@ -37,6 +37,8 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
   const [focusStatus, setFocusStatus] = useState<'NOT_STARTED' | 'NEW_STARTED' | 'IN_PROGRESS' | 'IN_TESTING' | 'COMPLETED' | undefined>(undefined);
   const [dateScope, setDateScope] = useState<'ALL' | 'TODAY' | 'WEEK'>('ALL');
+  const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const lastRefreshAtRef = useRef<number>(0);
   const pendingRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -49,6 +51,23 @@ export default function Dashboard() {
     if (session) {
       fetchTasks();
     }
+  }, [session]);
+
+  // Assigner için kullanıcı listesini getir
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        if (session?.user.role !== 'ASSIGNER') return;
+        const res = await fetch('/api/users', { cache: 'no-store' });
+        if (res.ok) {
+          const all = await res.json();
+          setUsers(all);
+        }
+      } catch (e) {
+        console.error('Error fetching users:', e);
+      }
+    };
+    loadUsers();
   }, [session]);
 
   // Tarih filtresi değiştiğinde güncel scope ile yeniden yükle
@@ -87,7 +106,7 @@ export default function Dashboard() {
         const row = (payload.new || payload.old) as Partial<Task> & { assigned_to?: string; created_by?: string };
         const me = session.user.id;
         const role = session.user.role;
-        const relevant = role === 'ADMIN' || (role === 'WORKER' && row?.assigned_to === me) || (role === 'ASSIGNER' && (row?.assigned_to === me || row?.created_by === me));
+        const relevant = role === 'ADMIN' || role === 'ASSIGNER' || (role === 'WORKER' && row?.assigned_to === me);
         if (relevant) {
           scheduleRefresh();
         }
@@ -107,7 +126,11 @@ export default function Dashboard() {
     try {
       setLoading(true);
       // Dashboard için filtrelenmiş API kullanımı
-      const response = await fetch('/api/tasks?dashboard=true&limit=80', { cache: 'no-store' });
+      const qs = new URLSearchParams();
+      qs.set('dashboard', 'true');
+      qs.set('limit', '80');
+      if (selectedUserId) qs.set('assigned_to', selectedUserId);
+      const response = await fetch(`/api/tasks?${qs.toString()}`, { cache: 'no-store' });
       if (response.ok) {
         const tasks = await response.json();
         // Date scope filtrelemesi (client-side basit)
@@ -135,7 +158,14 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [dateScope]);
+  }, [dateScope, selectedUserId]);
+
+  // Kullanıcı filtresi değiştiğinde yeniden yükle
+  useEffect(() => {
+    if (session) {
+      fetchTasks();
+    }
+  }, [selectedUserId, session, fetchTasks]);
 
   const handleStatusChange = async (taskId: string, newStatus: string) => {
     try {
@@ -297,6 +327,32 @@ export default function Dashboard() {
                 </Link>
               </div>
             </div>
+            {session.user.role === 'ASSIGNER' && (
+              <div className="px-6 py-3 border-t bg-gray-50 overflow-x-auto">
+                <div className="flex items-center gap-2 min-w-max">
+                  <button
+                    onClick={() => setSelectedUserId(null)}
+                    className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                      selectedUserId === null ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    Tümü
+                  </button>
+                  {users.map(u => (
+                    <button
+                      key={u.id}
+                      onClick={() => setSelectedUserId(prev => (prev === u.id ? null : u.id))}
+                      className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                        selectedUserId === u.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                      }`}
+                      title={u.name}
+                    >
+                      {u.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="p-6">
               {viewMode === 'kanban' ? (
                 <KanbanBoard

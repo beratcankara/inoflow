@@ -68,6 +68,79 @@ export async function GET(
   }
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id: taskId } = await params;
+    const body = await request.json();
+
+    // Sadece izin verilen alanları güncelle
+    const updateData: { description?: string; title?: string } = {};
+    if (typeof body.description === 'string') updateData.description = body.description;
+    if (typeof body.title === 'string') updateData.title = body.title;
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No updatable fields provided' }, { status: 400 });
+    }
+
+    // Mevcut task'ı getir ve erişim yetkisini kontrol et
+    const { data: existingTask, error: fetchError } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('id', taskId)
+      .single();
+
+    if (fetchError || !existingTask) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    // Yetki: 
+    // - ADMIN: her şey
+    // - WORKER: sadece kendisine atanan işler
+    // - ASSIGNER: kendisine atanan veya kendisinin oluşturduğu işler
+    if (session.user.role === 'WORKER' && existingTask.assigned_to !== session.user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
+    if (
+      session.user.role === 'ASSIGNER' &&
+      existingTask.assigned_to !== session.user.id &&
+      existingTask.created_by !== session.user.id
+    ) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
+
+    const { data: updatedTask, error: updateError } = await supabase
+      .from('tasks')
+      .update(updateData)
+      .eq('id', taskId)
+      .select(`
+        id, title, description, status, created_at, deadline, duration, assigned_to, created_by,
+        client:clients(id, name),
+        system:systems(id, name),
+        assigned_user:users!assigned_to(id, name),
+        creator:users!created_by(id, name)
+      `)
+      .single();
+
+    if (updateError) {
+      console.error('Error updating task:', updateError);
+      return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
+    }
+
+    return NextResponse.json(updatedTask);
+  } catch (error) {
+    console.error('Error updating task:', error);
+    return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

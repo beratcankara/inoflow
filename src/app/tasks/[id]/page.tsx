@@ -22,8 +22,14 @@ export default function TaskDetailPage() {
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
+  const newNoteEditorRef = useRef<HTMLDivElement | null>(null);
+  const [mention, setMention] = useState<{ open: boolean; x: number; y: number; query: string; section: 'USERS'|'TASKS'|'ROOT' } | null>(null);
+  const [mentionResults, setMentionResults] = useState<{ users: Array<{id:string;name:string}>; tasks: Array<{id:string;title:string}> }>({ users: [], tasks: [] });
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [editingSubtask, setEditingSubtask] = useState<Subtask | null>(null);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ type: 'subtask' | 'note' | 'task', id: string, title: string } | null>(null);
   const attachmentsRef = useRef<HTMLDivElement | null>(null);
   const logsRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +97,7 @@ export default function TaskDetailPage() {
       }
       const taskData = await taskResponse.json();
       setTask(taskData);
+      setDescriptionDraft(taskData.description || '');
 
       // Subtask ve notları paralel çek (ilk render sonrası)
       Promise.all([
@@ -253,9 +260,30 @@ export default function TaskDetailPage() {
     }
   };
 
+  const sanitizeAndNormalizeHtml = (html: string) => {
+    // Basit sanitizasyon: script etiketlerini kaldır
+    const cleaned = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+    // Link normalizasyonu: protokolsüz URL'lere https:// ekle, target/rel ayarla
+    const wrap = document.createElement('div');
+    wrap.innerHTML = cleaned;
+    wrap.querySelectorAll('a').forEach((a) => {
+      const href = a.getAttribute('href') || '';
+      const isProtocol = /^(https?:)?\/\//i.test(href);
+      if (!isProtocol && href && !href.startsWith('#') && !href.startsWith('/')) {
+        a.setAttribute('href', `https://${href}`);
+      }
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+    });
+    return wrap.innerHTML;
+  };
+
+  const stripHtml = (html: string) => (html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNoteContent.trim()) return;
+    const html = (newNoteEditorRef.current?.innerHTML || '').trim();
+    if (!html || html === '<br>' || html === '<div><br></div>') return;
 
     try {
       const response = await fetch(`/api/tasks/${params.id}/notes`, {
@@ -263,13 +291,38 @@ export default function TaskDetailPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content: newNoteContent }),
+        body: JSON.stringify({ content: sanitizeAndNormalizeHtml(html) }),
       });
 
       if (response.ok) {
         const newNote = await response.json();
+        // Mentionları yakala: <span class="mention" data-type data-id>@Label</span>
+        try {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = html;
+          const mentions = Array.from(tmp.querySelectorAll('span.mention')) as Array<HTMLSpanElement>;
+          for (const m of mentions) {
+            const type = m.getAttribute('data-type');
+            const id = m.getAttribute('data-id');
+            if (type === 'USER' && id) {
+              // Bildirim gönder
+              await fetch('/api/notifications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  task_id: params.id,
+                  receiver_id: id,
+                  type: 'TASK_COMMENT',
+                  title: 'İşte etiketlendiniz',
+                  message: `${session?.user?.name || 'Kullanıcı'} "${task?.title || ''}" işinde sizi etiketledi.`,
+                }),
+              });
+            }
+          }
+        } catch {}
         setNotes(prev => [...prev, newNote]);
         setNewNoteContent('');
+        if (newNoteEditorRef.current) newNoteEditorRef.current.innerHTML = '';
         setShowNoteForm(false);
       } else {
         console.error('Failed to create note');
@@ -277,6 +330,59 @@ export default function TaskDetailPage() {
     } catch (error) {
       console.error('Error creating note:', error);
     }
+  };
+
+  // Mention helpers
+  const fetchMentionResults = async (q: string) => {
+    try {
+      const [uRes, tRes] = await Promise.all([
+        fetch('/api/users', { cache: 'no-store' }),
+        fetch(`/api/tasks?limit=50`, { cache: 'no-store' })
+      ]);
+      const users = uRes.ok ? (await uRes.json()).filter((u: any) => (u.name||'').toLowerCase().includes(q.toLowerCase())).slice(0,6) : [];
+      const tasks = tRes.ok ? (await tRes.json()).filter((t: any) => (t.title||'').toLowerCase().includes(q.toLowerCase())).slice(0,6) : [];
+      setMentionResults({ users, tasks });
+      setMentionActiveIndex(0);
+    } catch {}
+  };
+
+  const insertMentionAtCaret = (type: 'USER'|'TASK', id: string, label: string) => {
+    const el = newNoteEditorRef.current;
+    if (!el) return;
+    const span = document.createElement('span');
+    span.className = 'mention';
+    span.contentEditable = 'false';
+    span.dataset.type = type;
+    span.dataset.id = id;
+    span.textContent = `@${label}`;
+    const space = document.createTextNode('\u00A0');
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+
+    // Sil: yazılmış olan "@query" metnini
+    try {
+      const charsToRemove = (mention?.query?.length || 0) + 1; // @ + query
+      if (range.startContainer.nodeType === Node.TEXT_NODE) {
+        const textNode = range.startContainer as Text;
+        const start = Math.max(0, range.startOffset - charsToRemove);
+        const delRange = document.createRange();
+        delRange.setStart(textNode, start);
+        delRange.setEnd(textNode, range.startOffset);
+        delRange.deleteContents();
+      }
+    } catch {}
+
+    range.insertNode(space);
+    range.insertNode(span);
+    range.setStartAfter(space);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    setMention(null);
+    el.focus();
+    // İçeriği state'e yaz
+    setNewNoteContent(el.innerHTML);
   };
 
   // Subtask silme
@@ -346,7 +452,9 @@ export default function TaskDetailPage() {
   // Not düzenleme
   const handleEditNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingNote || !editingNote.content.trim()) return;
+    if (!editingNote) return;
+    const html = (document.getElementById(`note-editor-${editingNote.id}`)?.innerHTML || '').trim();
+    if (!html || html === '<br>' || html === '<div><br></div>') return;
 
     try {
       const response = await fetch(`/api/tasks/${params.id}/notes?noteId=${editingNote.id}`, {
@@ -354,7 +462,7 @@ export default function TaskDetailPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content: editingNote.content }),
+        body: JSON.stringify({ content: sanitizeAndNormalizeHtml(html) }),
       });
 
       if (response.ok) {
@@ -408,11 +516,11 @@ export default function TaskDetailPage() {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'NOT_STARTED':
-        return 'Yapılacaklar';
+        return 'Açık İşler';
       case 'NEW_STARTED':
-        return 'Yeni Başlananlar';
+        return 'Geliştirilmeye Hazır';
       case 'IN_PROGRESS':
-        return 'Devam Edenler';
+        return 'Geliştirme Aşamasında';
       case 'IN_TESTING':
         return 'Teste Verilenler';
       case 'COMPLETED':
@@ -485,17 +593,17 @@ export default function TaskDetailPage() {
                   onChange={(e) => handleStatusChange(e.target.value)}
                   className="px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-md text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="NOT_STARTED">Yapılacaklar</option>
-                  <option value="NEW_STARTED">Yeni Başlananlar</option>
-                  <option value="IN_PROGRESS">Devam Edenler</option>
+                  <option value="NOT_STARTED">Açık İşler</option>
+                  <option value="NEW_STARTED">Geliştirilmeye Hazır</option>
+                  <option value="IN_PROGRESS">Geliştirme Aşamasında</option>
                   <option value="IN_TESTING">Teste Verilenler</option>
                   <option value="COMPLETED">Tamamlananlar</option>
                 </select>
               ) : (
                 <div className="px-3 py-2 bg-gray-100 text-gray-600 border border-gray-300 rounded-md text-sm">
-                  {task.status === 'NOT_STARTED' ? 'Yapılacaklar' :
-                   task.status === 'NEW_STARTED' ? 'Yeni Başlananlar' :
-                   task.status === 'IN_PROGRESS' ? 'Devam Edenler' :
+                  {task.status === 'NOT_STARTED' ? 'Açık İşler' :
+                   task.status === 'NEW_STARTED' ? 'Geliştirilmeye Hazır' :
+                   task.status === 'IN_PROGRESS' ? 'Geliştirme Aşamasında' :
                    task.status === 'IN_TESTING' ? 'Teste Verilenler' : 'Tamamlananlar'}
                 </div>
               )}
@@ -508,9 +616,65 @@ export default function TaskDetailPage() {
             {/* İş Açıklaması */}
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-semibold text-gray-800 mb-4">Açıklama</h2>
-              <p className="text-gray-600">
+              {editingDescription ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={descriptionDraft}
+                    onChange={(e) => setDescriptionDraft(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 bg-white"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/tasks/${params.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ description: descriptionDraft }),
+                          });
+                          if (res.ok) {
+                            const updated = await res.json();
+                            setTask(updated);
+                            setEditingDescription(false);
+                          } else {
+                            console.error('Açıklama güncellenemedi');
+                          }
+                        } catch (e) {
+                          console.error('Açıklama güncelleme hatası:', e);
+                        }
+                      }}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm"
+                    >
+                      Kaydet
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDescriptionDraft(task.description || '');
+                        setEditingDescription(false);
+                      }}
+                      className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm"
+                    >
+                      İptal
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-4">
+                  <p className="text-gray-600 whitespace-pre-wrap flex-1">
                 {task.description || 'Açıklama bulunmuyor.'}
               </p>
+                  {canEdit() && (
+                    <button
+                      onClick={() => setEditingDescription(true)}
+                      className="text-blue-600 hover:text-blue-800 text-sm"
+                      title="Açıklamayı düzenle"
+                    >
+                      ✏️ Düzenle
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Subtasklar */}
@@ -646,13 +810,124 @@ export default function TaskDetailPage() {
               {showNoteForm && (
                 <form onSubmit={handleCreateNote} className="mb-4">
                   <div className="space-y-2">
-                    <textarea
-                      value={newNoteContent}
-                      onChange={(e) => setNewNoteContent(e.target.value)}
-                      placeholder="Notunuzu yazın..."
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 bg-white"
-                    />
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <button type="button" onClick={() => document.execCommand('bold')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Kalın">B</button>
+                      <button type="button" onClick={() => document.execCommand('italic')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 italic" aria-label="İtalik">I</button>
+                      <button type="button" onClick={() => document.execCommand('underline')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Altı çizili">U</button>
+                      <button type="button" onClick={() => document.execCommand('formatBlock', false, 'h3')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Başlık">H3</button>
+                      <button type="button" onClick={() => document.execCommand('insertUnorderedList')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Madde işaretli liste">• Liste</button>
+                      <button type="button" onClick={() => document.execCommand('insertOrderedList')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Numaralı liste">1. Liste</button>
+                      <button type="button" onClick={() => { const url = prompt('Bağlantı URL'); if (url) { document.execCommand('createLink', false, url); } }} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Bağlantı">Bağlantı</button>
+                      <button type="button" onClick={() => { const url = prompt('Görsel URL'); if (url) { document.execCommand('insertImage', false, url); } }} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Görsel">Görsel</button>
+                    </div>
+                    <div className="relative">
+                      <div
+                        ref={newNoteEditorRef}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 bg-white min-h-24 note-editor"
+                        contentEditable
+                        suppressContentEditableWarning
+                      onKeyDown={async (e) => {
+                        if (mention?.open) {
+                          if (e.key === 'ArrowDown') { 
+                            e.preventDefault(); 
+                            const maxIndex = mention.section==='ROOT' ? 1 : (mention.section==='USERS'?mentionResults.users.length:mentionResults.tasks.length) - 1;
+                            setMentionActiveIndex((i) => Math.min(i+1, Math.max(0, maxIndex)));
+                            return; 
+                          }
+                          if (e.key === 'ArrowUp') { 
+                            e.preventDefault(); 
+                            setMentionActiveIndex((i) => Math.max(i-1, 0)); 
+                            return; 
+                          }
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (mention.section === 'ROOT') {
+                              if (mentionActiveIndex === 0) {
+                                setMention(m => m ? { ...m, section: 'USERS' } : m);
+                                fetchMentionResults('');
+                              } else {
+                                setMention(m => m ? { ...m, section: 'TASKS' } : m);
+                                fetchMentionResults('');
+                              }
+                              setMentionActiveIndex(0);
+                              return;
+                            }
+                            if (mention.section === 'USERS' && mentionResults.users[mentionActiveIndex]) {
+                              const u = mentionResults.users[mentionActiveIndex];
+                              insertMentionAtCaret('USER', u.id, u.name);
+                            } else if (mention.section === 'TASKS' && mentionResults.tasks[mentionActiveIndex]) {
+                              const t = mentionResults.tasks[mentionActiveIndex];
+                              insertMentionAtCaret('TASK', t.id, t.title);
+                            }
+                            return;
+                          }
+                          if (e.key === 'Escape') { setMention(null); return; }
+                        }
+                        if (e.key === '@') {
+                          setTimeout(() => {
+                            const rect = (e.target as HTMLDivElement).getBoundingClientRect();
+                            const sel = window.getSelection();
+                            if (!sel || !sel.rangeCount) return;
+                            const range = sel.getRangeAt(0).cloneRange();
+                            const marker = document.createElement('span');
+                            marker.textContent = '\u200b';
+                            range.insertNode(marker);
+                            const mRect = marker.getBoundingClientRect();
+                            marker.remove();
+                            setMention({ open: true, x: mRect.left - rect.left, y: mRect.bottom - rect.top + 22, query: '', section: 'ROOT' });
+                          }, 0);
+                        }
+                      }}
+                      onInput={(e) => {
+                        const html = (e.target as HTMLDivElement).innerHTML;
+                        setNewNoteContent(html);
+                        if (mention?.open) {
+                          const text = (e.target as HTMLDivElement).innerText;
+                          const match = /@([\p{L}0-9 _-]{0,30})$/u.exec(text);
+                          if (mention.section !== 'ROOT' && match) {
+                            const q = match[1].trim();
+                            setMention((m) => m ? { ...m, query: q } : m);
+                            fetchMentionResults(q);
+                          } else {
+                            setMention(null);
+                          }
+                        }
+                      }}
+                      />
+                      {mention?.open && (
+                        <div className={`mention-menu ${mention.section==='ROOT' ? 'root' : ''}`} style={{ left: mention.x, top: mention.y, position: 'absolute' }}>
+                          {mention.section === 'ROOT' ? (
+                            <>
+                              <div className={`item ${mentionActiveIndex===0?'active':''}`} onMouseDown={(e) => { e.preventDefault(); setMention(m => m ? { ...m, section: 'USERS' } : m); fetchMentionResults(''); }}>Kişiler</div>
+                              <div className={`item ${mentionActiveIndex===1?'active':''}`} onMouseDown={(e) => { e.preventDefault(); setMention(m => m ? { ...m, section: 'TASKS' } : m); fetchMentionResults(''); }}>İşler</div>
+                            </>
+                          ) : (
+                            <>
+                              {mention.section === 'USERS' && (
+                                <>
+                                  <div className="section-title">Kişiler</div>
+                                  {mentionResults.users.map((u, idx) => (
+                                    <div key={u.id} className={`item ${mention.section==='USERS' && idx===mentionActiveIndex ? 'active' : ''}`} onMouseDown={(e) => { e.preventDefault(); insertMentionAtCaret('USER', u.id, u.name); }}>
+                                      {u.name}
+                                    </div>
+                                  ))}
+                                </>
+                              )}
+                              {mention.section === 'TASKS' && (
+                                <>
+                                  <div className="section-title">İşler</div>
+                                  {mentionResults.tasks.map((t, idx) => (
+                                    <div key={t.id} className={`item ${mention.section==='TASKS' && idx===mentionActiveIndex ? 'active' : ''}`} onMouseDown={(e) => { e.preventDefault(); insertMentionAtCaret('TASK', t.id, t.title); }}>
+                                      {t.title}
+                                    </div>
+                                  ))}
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <div className="flex space-x-2">
                       <button
                         type="submit"
@@ -662,7 +937,7 @@ export default function TaskDetailPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setShowNoteForm(false)}
+                        onClick={() => { setShowNoteForm(false); if (newNoteEditorRef.current) newNoteEditorRef.current.innerHTML = ''; }}
                         className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm"
                       >
                         İptal
@@ -677,12 +952,23 @@ export default function TaskDetailPage() {
                   <div key={note.id} className="p-4 bg-gray-50 rounded-md group">
                     {editingNote?.id === note.id ? (
                       <form onSubmit={handleEditNote} className="space-y-2">
-                        <textarea
-                          value={editingNote.content}
-                          onChange={(e) => setEditingNote({...editingNote, content: e.target.value})}
-                          rows={3}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 bg-white"
-                          autoFocus
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <button type="button" onClick={() => document.execCommand('bold')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Kalın">B</button>
+                          <button type="button" onClick={() => document.execCommand('italic')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 italic" aria-label="İtalik">I</button>
+                          <button type="button" onClick={() => document.execCommand('underline')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Altı çizili">U</button>
+                          <button type="button" onClick={() => document.execCommand('formatBlock', false, 'h3')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Başlık">H3</button>
+                          <button type="button" onClick={() => document.execCommand('insertUnorderedList')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Madde işaretli liste">• Liste</button>
+                          <button type="button" onClick={() => document.execCommand('insertOrderedList')} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Numaralı liste">1. Liste</button>
+                          <button type="button" onClick={() => { const url = prompt('Bağlantı URL'); if (url) { document.execCommand('createLink', false, url); } }} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Bağlantı">Bağlantı</button>
+                          <button type="button" onClick={() => { const url = prompt('Görsel URL'); if (url) { document.execCommand('insertImage', false, url); } }} className="px-2 py-1 border border-gray-300 rounded-md bg-white text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Görsel">Görsel</button>
+                        </div>
+                        <div
+                          id={`note-editor-${editingNote.id}`}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 bg-white min-h-20 note-editor"
+                          contentEditable
+                          suppressContentEditableWarning
+                          dangerouslySetInnerHTML={{ __html: editingNote.content }}
+                          autoFocus={true as unknown as boolean}
                         />
                         <div className="flex space-x-2">
                           <button
@@ -702,7 +988,12 @@ export default function TaskDetailPage() {
                       </form>
                     ) : (
                       <>
-                        <p className="text-gray-900 mb-2">{note.content}</p>
+                        <div className="text-gray-900 mb-2 note-content" dangerouslySetInnerHTML={{ __html: note.content }} onClick={(e) => {
+                          const target = e.target as HTMLElement;
+                          if (target && target.classList.contains('mention') && target.dataset.type === 'TASK' && target.dataset.id) {
+                            router.push(`/tasks/${target.dataset.id}`);
+                          }
+                        }} />
                         <div className="flex justify-between items-center text-xs text-gray-500">
                           <span>{note.author?.name || 'Bilinmeyen'}</span>
                           <div className="flex items-center space-x-2">
@@ -717,7 +1008,10 @@ export default function TaskDetailPage() {
                                   ✏️
                                 </button>
                                 <button
-                                  onClick={() => setShowDeleteConfirm({ type: 'note', id: note.id, title: note.content.substring(0, 30) + '...' })}
+                                  onClick={() => {
+                                    const plain = stripHtml(note.content);
+                                    setShowDeleteConfirm({ type: 'note', id: note.id, title: (plain.length>30?plain.slice(0,30)+'...':plain) });
+                                  }}
                                   className="text-red-600 hover:text-red-800 text-xs"
                                   title="Sil"
                                 >
@@ -743,7 +1037,20 @@ export default function TaskDetailPage() {
           <div className="space-y-6">
             {/* Ekler */}
             <div ref={attachmentsRef} className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Ekler</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Ekler</h3>
+              {canEdit() && (
+                <div className="mb-3">
+                  <label className="inline-block text-sm text-gray-600 mr-2">Dosya yükle:</label>
+                  <input type="file" multiple onChange={async (e) => {
+                    const files = e.target.files; if (!files || files.length===0) return;
+                    const form = new FormData(); form.append('taskId', String(params.id));
+                    Array.from(files).forEach(f => form.append('files', f));
+                    await fetch('/api/tasks/attachments/upload', { method: 'POST', body: form });
+                    const attsResponse = await fetch(`/api/tasks/${params.id}/attachments?ts=${Date.now()}`, { cache: 'no-store' });
+                    if (attsResponse.ok) setAttachments(await attsResponse.json());
+                  }} className="text-sm" />
+                </div>
+              )}
               {!attachmentsLoaded ? (
                 <div className="space-y-2">
                   <div className="h-24 bg-gray-100 rounded animate-pulse" />
@@ -782,6 +1089,21 @@ export default function TaskDetailPage() {
                                 <path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/>
                               </svg>
                             </a>
+                            {canEdit() && (
+                              <button
+                                aria-label="Sil"
+                                title="Sil"
+                                className="text-red-600 hover:text-red-800"
+                                onClick={async () => {
+                                  await fetch(`/api/tasks/${params.id}/attachments?attId=${att.id}`, { method: 'DELETE' });
+                                  setAttachments(prev => prev.filter(a => a.id !== att.id));
+                                }}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                                  <path d="M6 7h12v2H6zM9 9h2v9H9zm4 0h2v9h-2zM8 4h8l1 2H7z"/>
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         </div>
                         {isImage && url && (

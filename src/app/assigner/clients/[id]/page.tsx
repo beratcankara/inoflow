@@ -35,7 +35,6 @@ export default function ClientDetailPage() {
   useEffect(() => {
     if (status === 'loading') return;
     if (!session) router.push('/auth/signin');
-    if (session && session.user.role === 'WORKER') router.push('/dashboard');
   }, [session, status, router]);
 
   useEffect(() => {
