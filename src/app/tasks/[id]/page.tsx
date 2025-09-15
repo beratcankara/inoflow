@@ -339,8 +339,18 @@ export default function TaskDetailPage() {
         fetch('/api/users', { cache: 'no-store' }),
         fetch(`/api/tasks?limit=50`, { cache: 'no-store' })
       ]);
-      const users = uRes.ok ? (await uRes.json()).filter((u: any) => (u.name||'').toLowerCase().includes(q.toLowerCase())).slice(0,6) : [];
-      const tasks = tRes.ok ? (await tRes.json()).filter((t: any) => (t.title||'').toLowerCase().includes(q.toLowerCase())).slice(0,6) : [];
+      type UserLite = { id: string; name?: string };
+      type TaskLite = { id: string; title?: string };
+      const uJson: UserLite[] = uRes.ok ? await uRes.json() : [];
+      const tJson: TaskLite[] = tRes.ok ? await tRes.json() : [];
+      const users = uJson
+        .filter((u) => (u.name || '').toLowerCase().includes(q.toLowerCase()))
+        .slice(0, 6)
+        .map((u) => ({ id: u.id, name: u.name ?? '' }));
+      const tasks = tJson
+        .filter((t) => (t.title || '').toLowerCase().includes(q.toLowerCase()))
+        .slice(0, 6)
+        .map((t) => ({ id: t.id, title: t.title ?? '' }));
       setMentionResults({ users, tasks });
       setMentionActiveIndex(0);
     } catch {}
