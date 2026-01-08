@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+---
+# Teknoloji Dokümantasyon Bağlantıları
+
+- Next.js 15: https://nextjs.org/docs
+- React 19: https://react.dev/blog/2024/12/05/react-19
+- NextAuth (Credentials & JWT): https://authjs.dev/
+- Supabase JS v2 (Client): https://supabase.com/docs/reference/javascript
+- Supabase Storage: https://supabase.com/docs/guides/storage
+- Tailwind CSS v4: https://tailwindcss.com/docs
+- TypeScript: https://www.typescriptlang.org/docs/
+- ESLint 9: https://eslint.org/docs/latest/
+- clsx: https://github.com/lukeed/clsx
+- tailwind-merge: https://github.com/dcastil/tailwind-merge
+- bcryptjs: https://github.com/dcodeIO/bcrypt.js/
+- Nodemailer: https://nodemailer.com/about/
+- Resend Email API: https://resend.com/docs
+
+# Notlar
+- Projede Next.js App Router, Middleware ve Route Handlers kullanılmaktadır.
+- Kimlik doğrulama NextAuth Credentials Provider ile ve JWT stratejisiyle yapılandırılmıştır.
+- Supabase hem veri erişimi hem de Storage için kullanılmaktadır.
