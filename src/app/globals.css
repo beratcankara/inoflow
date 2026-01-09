@@ -107,3 +107,19 @@ body {
 .kanban-scroll::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
+
+/* Slide down animation for collapsible filter panel */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideDown {
+  animation: slideDown 0.2s ease-out;
+}

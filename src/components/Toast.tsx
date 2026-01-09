@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 export type ToastType = 'success' | 'error' | 'info';
+
+// Use a counter instead of Date.now() to avoid hydration mismatch
+let toastCounter = 0;
 
 export function showToast(message: string, type: ToastType = 'info') {
   const root = document.getElementById('toast-root');
   if (!root) return;
-  const id = `t_${Date.now()}`;
+  const id = `t_${++toastCounter}`;
   const div = document.createElement('div');
   div.id = id;
   div.className = 'pointer-events-auto';
@@ -22,12 +23,6 @@ export function showToast(message: string, type: ToastType = 'info') {
     div.style.transition = 'opacity 300ms';
     setTimeout(() => root.removeChild(div), 320);
   }, 2500);
-}
-
-export default function ToastDebug() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  return mounted ? null : null;
 }
 
 

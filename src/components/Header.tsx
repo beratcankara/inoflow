@@ -27,13 +27,16 @@ export default function Header() {
               />
             </Link>
           </div>
-          
+
           <nav className="hidden md:flex space-x-8">
             <Link href="/dashboard" className="text-gray-600 hover:text-blue-600 hover:scale-105 transition-all duration-200 font-medium">
               Dashboard
             </Link>
             <Link href="/tasks" className="text-gray-600 hover:text-blue-600 hover:scale-105 transition-all duration-200 font-medium">
               İşler
+            </Link>
+            <Link href="/activities" className="text-gray-600 hover:text-blue-600 hover:scale-105 transition-all duration-200 font-medium">
+              Aktiviteler
             </Link>
             {session?.user?.role === 'ADMIN' && (
               <Link href="/admin" className="text-gray-600 hover:text-blue-600 hover:scale-105 transition-all duration-200 font-medium">
@@ -51,7 +54,7 @@ export default function Header() {
               </Link>
             )}
           </nav>
-          
+
           <div className="flex items-center space-x-4">
             {session ? (
               <div className="flex items-center space-x-4">
@@ -80,8 +83,8 @@ export default function Header() {
                 Giriş Yap
               </Link>
             )}
-            
-            <button 
+
+            <button
               className="md:hidden"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
             >
@@ -91,7 +94,7 @@ export default function Header() {
             </button>
           </div>
         </div>
-        
+
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t">
             <nav className="flex flex-col space-y-4">
@@ -100,6 +103,9 @@ export default function Header() {
               </Link>
               <Link href="/tasks" className="text-gray-600 hover:text-blue-600 transition-colors">
                 İşler
+              </Link>
+              <Link href="/activities" className="text-gray-600 hover:text-blue-600 transition-colors">
+                Aktiviteler
               </Link>
               {session?.user?.role === 'ADMIN' && (
                 <Link href="/admin" className="text-gray-600 hover:text-blue-600 transition-colors">
