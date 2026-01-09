@@ -38,15 +38,35 @@ export default function InlineDatePicker({
         }
     }, [isOpen, initialNote]);
 
-    // Position popover near the button
+    // Position popover near the button with smart placement
     useEffect(() => {
         if (isOpen && buttonRef && popoverRef.current) {
             const buttonRect = buttonRef.getBoundingClientRect();
             const popover = popoverRef.current;
 
-            // Position to the left of the button
-            popover.style.top = `${buttonRect.top}px`;
-            popover.style.left = `${buttonRect.left - popover.offsetWidth - 8}px`;
+            // Wait for next frame to get correct popover dimensions
+            setTimeout(() => {
+                const popoverHeight = popover.offsetHeight;
+                const popoverWidth = popover.offsetWidth;
+                const viewportHeight = window.innerHeight;
+
+                // Check if popover would overflow bottom of viewport
+                const spaceBelow = viewportHeight - buttonRect.bottom;
+                const spaceAbove = buttonRect.top;
+                const shouldPlaceAbove = spaceBelow < popoverHeight && spaceAbove > popoverHeight;
+
+                // Position horizontally (to the left of button)
+                popover.style.left = `${buttonRect.left - popoverWidth - 8}px`;
+
+                // Position vertically (smart placement)
+                if (shouldPlaceAbove) {
+                    // Place above button
+                    popover.style.top = `${buttonRect.top - popoverHeight - 8}px`;
+                } else {
+                    // Place at button level (default)
+                    popover.style.top = `${buttonRect.top}px`;
+                }
+            }, 0);
         }
     }, [isOpen, buttonRef]);
 

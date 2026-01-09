@@ -160,7 +160,15 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { task_id, client_id, system_id, activity_date, time_spent_minutes, note } = body;
+        const { user_id, task_id, client_id, system_id, activity_date, time_spent_minutes, note } = body;
+
+        // Determine target user ID
+        let targetUserId = session.user.id; // Default to current user
+
+        // Assigners/Admins can create activities for other users
+        if ((session.user.role === 'ASSIGNER' || session.user.role === 'ADMIN') && user_id) {
+            targetUserId = user_id;
+        }
 
         // Validate required fields - either task_id OR (client_id + system_id)
         if (!activity_date || !time_spent_minutes || !note) {
@@ -239,20 +247,29 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ error: 'Task not found' }, { status: 404 });
             }
 
-            // Verify task ownership (unless ADMIN)
-            if (
-                session.user.role !== 'ADMIN' &&
-                task.assigned_to !== session.user.id
-            ) {
+            // Verify task ownership
+            // Workers can only log for their own tasks
+            // Assigners/Admins can log for any user if user_id is provided
+            if (session.user.role === 'WORKER' && task.assigned_to !== session.user.id) {
                 return NextResponse.json(
                     { error: 'You can only log activities for your own tasks' },
                     { status: 403 }
                 );
             }
 
+            // For Assigners/Admins creating for another user, verify task belongs to target user
+            if ((session.user.role === 'ASSIGNER' || session.user.role === 'ADMIN') &&
+                user_id &&
+                task.assigned_to !== targetUserId) {
+                return NextResponse.json(
+                    { error: 'Task is not assigned to the selected user' },
+                    { status: 403 }
+                );
+            }
+
             activityData = {
                 task_id,
-                user_id: session.user.id,
+                user_id: targetUserId, // Use target user
                 client_id: task.client_id,
                 system_id: task.system_id,
                 activity_date,
@@ -292,7 +309,7 @@ export async function POST(request: NextRequest) {
             }
 
             activityData = {
-                user_id: session.user.id,
+                user_id: targetUserId, // Use target user (NOT session.user.id!)
                 client_id: client_id!,
                 system_id: system_id!,
                 activity_date,

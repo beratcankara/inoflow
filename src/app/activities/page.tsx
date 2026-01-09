@@ -236,7 +236,7 @@ export default function ActivitiesPage() {
             }
 
             // Create duplicate with new date and note
-            const duplicateData = {
+            const duplicateData: any = {
                 client_id: activity.client_id,
                 system_id: activity.system_id,
                 task_id: activity.task_id || undefined,
@@ -244,6 +244,11 @@ export default function ActivitiesPage() {
                 time_spent_minutes: activity.time_spent_minutes,
                 note: newNote,
             };
+
+            // Preserve user_id when Assigner copies activity for another user
+            if ((session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN') && activity.user_id) {
+                duplicateData.user_id = activity.user_id;
+            }
 
             const response = await fetch('/api/activities', {
                 method: 'POST',

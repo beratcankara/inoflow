@@ -86,7 +86,9 @@ export async function PATCH(
         }
 
         // Verify ownership
-        if (existingActivity.user_id !== session.user.id) {
+        // Workers can only edit their own activities
+        // Assigners/Admins can edit any activity
+        if (session.user.role === 'WORKER' && existingActivity.user_id !== session.user.id) {
             return NextResponse.json(
                 { error: 'You can only edit your own activities' },
                 { status: 403 }
@@ -225,7 +227,9 @@ export async function DELETE(
         }
 
         // Verify ownership
-        if (existingActivity.user_id !== session.user.id) {
+        // Workers can only delete their own activities
+        // Assigners/Admins can delete any activity
+        if (session.user.role === 'WORKER' && existingActivity.user_id !== session.user.id) {
             return NextResponse.json(
                 { error: 'You can only delete your own activities' },
                 { status: 403 }

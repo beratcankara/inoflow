@@ -6,6 +6,7 @@ import { Task } from '@/types/task';
 import { Client } from '@/types';
 import { System } from '@/types';
 import { parseTimeInput, formatMinutes, validateActivityDate } from '@/lib/timeParser';
+import { useSession } from 'next-auth/react';
 
 interface QuickAddActivityModalProps {
     isOpen: boolean;
@@ -42,20 +43,37 @@ export default function QuickAddActivityModal({
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [keepOpen, setKeepOpen] = useState(false);
 
+    // Session for role-based features
+    const { data: session } = useSession();
+
+    // Users list (for Assigners)
+    const [users, setUsers] = useState<any[]>([]);
+    const [selectedUserId, setSelectedUserId] = useState<string>('');
+
     // Calculate min and max dates
     const today = new Date().toISOString().split('T')[0];
     const fifteenDaysAgo = new Date();
     fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
     const minDate = fifteenDaysAgo.toISOString().split('T')[0];
 
-    // Fetch clients on mount
+    // Fetch clients, systems, tasks, and users on mount
     useEffect(() => {
         if (isOpen) {
             fetchClients();
             fetchSystems();
             fetchTasks();
+
+            // Fetch users for Assigners/Admins
+            if (session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN') {
+                fetchUsers();
+            }
+
+            // Set default user to current user
+            if (session?.user?.id) {
+                setSelectedUserId(session.user.id);
+            }
         }
-    }, [isOpen]);
+    }, [isOpen, session]);
 
     // Filter systems when client changes
     useEffect(() => {
@@ -81,6 +99,13 @@ export default function QuickAddActivityModal({
         // Reset task when system changes
         setFormData((prev) => ({ ...prev, task_id: '' }));
     }, [formData.system_id, tasks]);
+
+    // Refetch tasks when selected user changes (for Assigners/Admins)
+    useEffect(() => {
+        if (isOpen && selectedUserId) {
+            fetchTasks(selectedUserId);
+        }
+    }, [selectedUserId, isOpen]);
 
     const fetchClients = async () => {
         setLoadingClients(true);
@@ -112,10 +137,16 @@ export default function QuickAddActivityModal({
         }
     };
 
-    const fetchTasks = async () => {
+    const fetchTasks = async (userId?: string) => {
         setLoadingTasks(true);
         try {
-            const response = await fetch('/api/tasks');
+            // Build URL with optional user filter
+            let url = '/api/tasks';
+            if (userId) {
+                url += `?assigned_to=${userId}`;
+            }
+
+            const response = await fetch(url);
             if (response.ok) {
                 const data = await response.json();
                 setTasks(data);
@@ -124,6 +155,18 @@ export default function QuickAddActivityModal({
             console.error('Error fetching tasks:', error);
         } finally {
             setLoadingTasks(false);
+        }
+    };
+
+    const fetchUsers = async () => {
+        try {
+            const response = await fetch('/api/users');
+            if (response.ok) {
+                const data = await response.json();
+                setUsers(data);
+            }
+        } catch (error) {
+            console.error('Error fetching users:', error);
         }
     };
 
@@ -192,6 +235,7 @@ export default function QuickAddActivityModal({
                 activity_date: string;
                 time_spent_minutes: number;
                 note: string;
+                user_id?: string; // For Assigners/Admins
             } = {
                 client_id: formData.client_id,
                 system_id: formData.system_id,
@@ -203,6 +247,11 @@ export default function QuickAddActivityModal({
             // Only include task_id if it's selected
             if (formData.task_id) {
                 payload.task_id = formData.task_id;
+            }
+
+            // Include user_id for Assigners/Admins
+            if ((session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN') && selectedUserId) {
+                payload.user_id = selectedUserId;
             }
 
             const response = await fetch('/api/activities', {
@@ -292,6 +341,27 @@ export default function QuickAddActivityModal({
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    {/* User Selection - Only for Assigners/Admins */}
+                    {(session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN') && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Kullanıcı <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                value={selectedUserId}
+                                onChange={(e) => setSelectedUserId(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                            >
+                                <option value="">Kullanıcı seçin...</option>
+                                {users.map((user) => (
+                                    <option key={user.id} value={user.id}>
+                                        {user.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     {/* Date */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">

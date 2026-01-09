@@ -199,7 +199,7 @@ export default function ActivityTable({
         const date = new Date(dateString);
         return date.toLocaleDateString('tr-TR', {
             day: '2-digit',
-            month: 'short',
+            month: '2-digit', // Changed from 'short' to '2-digit'
             year: 'numeric',
         });
     };
