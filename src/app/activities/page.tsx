@@ -68,30 +68,8 @@ export default function ActivitiesPage() {
         selectedUser
     ].filter(Boolean).length;
 
-    // Redirect if not authenticated
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/auth/signin');
-        }
-    }, [status, router]);
-
-    // Fetch clients and systems
-    useEffect(() => {
-        fetchClients();
-        fetchSystems();
-        if (session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN') {
-            fetchUsers();
-        }
-    }, [session]);
-
-    // Fetch activities when filters change
-    useEffect(() => {
-        if (status === 'authenticated') {
-            fetchActivities();
-        }
-    }, [status, dateFrom, dateTo, selectedClient, selectedSystem, selectedUser, currentPage]);
-
-    const fetchClients = async () => {
+    // Fetch functions (must be declared before useEffect that uses them)
+    const fetchClients = useCallback(async () => {
         try {
             const response = await fetch('/api/clients');
             if (response.ok) {
@@ -101,9 +79,9 @@ export default function ActivitiesPage() {
         } catch (error) {
             console.error('Error fetching clients:', error);
         }
-    };
+    }, []);
 
-    const fetchSystems = async () => {
+    const fetchSystems = useCallback(async () => {
         try {
             const response = await fetch('/api/systems');
             if (response.ok) {
@@ -113,9 +91,9 @@ export default function ActivitiesPage() {
         } catch (error) {
             console.error('Error fetching systems:', error);
         }
-    };
+    }, []);
 
-    const fetchUsers = async () => {
+    const fetchUsers = useCallback(async () => {
         try {
             const response = await fetch('/api/users');
             if (response.ok) {
@@ -125,31 +103,9 @@ export default function ActivitiesPage() {
         } catch (error) {
             console.error('Error fetching users:', error);
         }
-    };
+    }, []);
 
-    // Filter systems when client changes
-    useEffect(() => {
-        if (selectedClient) {
-            const filtered = systems.filter(s => s.client_id === selectedClient);
-            setFilteredSystems(filtered);
-        } else {
-            setFilteredSystems(systems);
-        }
-        // Reset system when client changes
-        setSelectedSystem('');
-    }, [selectedClient, systems]);
-
-    const handleClientChange = (clientId: string) => {
-        setSelectedClient(clientId);
-        setCurrentPage(1);
-    };
-
-    const handleSystemChange = (systemId: string) => {
-        setSelectedSystem(systemId);
-        setCurrentPage(1);
-    };
-
-    const fetchActivities = async () => {
+    const fetchActivities = useCallback(async () => {
         setLoading(true);
         try {
             const params = new URLSearchParams({
@@ -187,6 +143,51 @@ export default function ActivitiesPage() {
         } finally {
             setLoading(false);
         }
+    }, [dateFrom, dateTo, currentPage, limit, selectedClient, selectedSystem, selectedUser]);
+
+    // Redirect if not authenticated
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.push('/auth/signin');
+        }
+    }, [status, router]);
+
+    // Fetch clients and systems
+    useEffect(() => {
+        fetchClients();
+        fetchSystems();
+        if (session?.user?.role === 'ASSIGNER' || session?.user?.role === 'ADMIN') {
+            fetchUsers();
+        }
+    }, [session, fetchClients, fetchSystems, fetchUsers]);
+
+    // Fetch activities when filters change
+    useEffect(() => {
+        if (status === 'authenticated') {
+            fetchActivities();
+        }
+    }, [status, dateFrom, dateTo, selectedClient, selectedSystem, selectedUser, currentPage, fetchActivities]);
+
+    // Filter systems when client changes
+    useEffect(() => {
+        if (selectedClient) {
+            const filtered = systems.filter(s => s.client_id === selectedClient);
+            setFilteredSystems(filtered);
+        } else {
+            setFilteredSystems(systems);
+        }
+        // Reset system when client changes
+        setSelectedSystem('');
+    }, [selectedClient, systems]);
+
+    const handleClientChange = (clientId: string) => {
+        setSelectedClient(clientId);
+        setCurrentPage(1);
+    };
+
+    const handleSystemChange = (systemId: string) => {
+        setSelectedSystem(systemId);
+        setCurrentPage(1);
     };
 
     const handleDeleteActivity = (id: string) => {
@@ -302,50 +303,6 @@ export default function ActivitiesPage() {
         setCurrentPage(1);
     };
 
-    const exportToExcel = () => {
-        // Dynamically import xlsx to avoid SSR issues
-        import('xlsx').then((XLSX) => {
-            // Prepare data
-            const headers = ['Tarih', 'Görev', 'Firma', 'Sistem', 'Süre (Saat)', 'Süre (dk)', 'Not'];
-            const data = activities.map(activity => [
-                activity.activity_date,
-                activity.task?.title || 'Görev Yok',
-                activity.client?.name || '',
-                activity.system?.name || '',
-                formatMinutes(activity.time_spent_minutes),
-                activity.time_spent_minutes,
-                activity.note
-            ]);
-
-            // Create workbook and worksheet
-            const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
-
-            // Set column widths
-            ws['!cols'] = [
-                { wch: 12 }, // Tarih
-                { wch: 30 }, // Görev
-                { wch: 20 }, // Firma
-                { wch: 20 }, // Sistem
-                { wch: 12 }, // Süre (Saat)
-                { wch: 10 }, // Süre (dk)
-                { wch: 50 }, // Not
-            ];
-
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Aktiviteler');
-
-            // Generate filename
-            const filename = `aktiviteler_${dateFrom}_${dateTo}.xlsx`;
-
-            // Download
-            XLSX.writeFile(wb, filename);
-
-            showToast('Excel dosyası indiriliyor', 'success');
-        }).catch(error => {
-            console.error('Error exporting to Excel:', error);
-            showToast('Excel indirme hatası', 'error');
-        });
-    };
 
     const handleExportWithTemplate = async (templateId: string) => {
         try {
