@@ -78,3 +78,6 @@ export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
 export type UserRole = 'ADMIN' | 'ASSIGNER' | 'WORKER';
 export type NotificationStatus = 'UNREAD' | 'READ';
 export type NotificationType = 'TASK_ASSIGNED' | 'TASK_STATUS_CHANGED' | 'TASK_COMPLETED' | 'TASK_COMMENT';
+
+// Activity types
+export * from './activity';

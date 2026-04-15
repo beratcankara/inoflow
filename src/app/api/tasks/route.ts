@@ -43,17 +43,8 @@ export async function GET(request: NextRequest) {
         query = query.eq('assigned_to', session.user.id);
       }
     }
-    // Assigner kullanıcıları: Dashboard'da TÜM işleri görebilir.
-    // Dashboard dışı sayfalarda (ör. kendi görünümü) varsayılan daraltma korunur.
-    else if (session.user.role === 'ASSIGNER') {
-      if (!isDashboard) {
-        if (!assignedTo) {
-          query = query.or(`assigned_to.eq.${session.user.id},created_by.eq.${session.user.id}`);
-        }
-      }
-      // isDashboard === true iken herhangi bir ek kısıtlama uygulanmaz (tüm işler)
-    }
-    // Admin tüm işleri görür (filtreleme yok)
+    // Assigner users can see ALL tasks (no restrictions)
+    // Admin users see all tasks as well (no restrictions)
 
     // Dashboard için: Tamamlanan işlerde son 1 hafta filtresi
     if (isDashboard) {
@@ -145,12 +136,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    
+
     // Worker kullanıcıları sadece kendilerine iş atayabilir
     if (session.user.role === 'WORKER' && body.assigned_to !== session.user.id) {
       return NextResponse.json({ error: 'Workers can only assign tasks to themselves' }, { status: 403 });
     }
-    
+
     const { data: task, error } = await supabase
       .from('tasks')
       .insert({
