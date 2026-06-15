@@ -54,8 +54,8 @@ export async function POST(req: NextRequest) {
       activity?: { note?: string; time_spent_minutes?: number; activity_date?: string };
     };
 
-    if (!email || !password) {
-      return NextResponse.json({ error: 'email ve password gerekli' }, { status: 400 });
+    if (!email) {
+      return NextResponse.json({ error: 'email gerekli' }, { status: 400 });
     }
     if (!task_id || typeof task_id !== 'string') {
       return NextResponse.json({ error: 'task_id gerekli' }, { status: 400 });
@@ -66,18 +66,22 @@ export async function POST(req: NextRequest) {
 
     const supabase = serviceClient();
 
-    // Kullanıcıyı doğrula (NextAuth authorize ile aynı mantık)
+    // Kullanıcıyı e-posta ile bul (atıf için). created_by = bu kullanıcı.
     const { data: user, error: userErr } = await supabase
       .from('users')
       .select('id, password_hash')
       .eq('email', email)
       .single();
     if (userErr || !user) {
-      return NextResponse.json({ error: 'Geçersiz kimlik bilgileri' }, { status: 401 });
+      return NextResponse.json({ error: 'Kullanıcı bulunamadı' }, { status: 401 });
     }
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      return NextResponse.json({ error: 'Geçersiz kimlik bilgileri' }, { status: 401 });
+    // password verilmişse bcrypt ile doğrula (geriye uyum — .env tabanlı çağrı).
+    // Verilmemişse API anahtarı güveni yeterlidir (chat, kullanıcıyı girişte doğruladı).
+    if (password !== undefined) {
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid) {
+        return NextResponse.json({ error: 'Geçersiz kimlik bilgileri' }, { status: 401 });
+      }
     }
     const createdBy: string = user.id;
 
